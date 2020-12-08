@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>edit4.11</title>
+    <style>
+        html, body, #viewDiv {
+            padding: 0;
+            margin: 0;
+            height: 100%;
+            width: 100%;
+        }
+
+        #tooltip{
+            position: absolute;
+            width: 100px;
+            top: 2%;
+            right: 2%;
+        }
+        .echart_content{
+            position: absolute;
+            width: 300px;
+            height: 600px;
+            background: white;
+            top: 7%;
+            right: 2%;
+        }
+
+        .echart_content>div{
+            margin-top: 20px;
+        }
+        #echart_bar,#echart_pie{
+            width: 100%;
+            height: 45%;
+            border: 1px solid green;
+        }
+    </style>
+    <link rel="stylesheet"
+          href="http://106.14.206.172:1059/4.16/esri/css/main.css"
+    />
+    <script src="http://106.14.206.172:1059/4.16/init.js"></script>
+    <script>
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/views/SceneView",
+            //layer
+            "esri/layers/GeoJSONLayer",
+            "esri/layers/FeatureLayer",
+            "esri/layers/MapImageLayer",
+            "esri/layers/GraphicsLayer",
+            "esri/geometry/Extent",
+            "esri/widgets/CoordinateConversion",
+            "esri/layers/TileLayer",
+            "esri/Graphic",
+            "esri/layers/ElevationLayer",
+            "esri/layers/IntegratedMeshLayer",
+            //工具
+            "esri/core/watchUtils",
+            "dojo/domReady!"
+        ], function (Map, MapView, SceneView,
+                     GeoJSONLayer, FeatureLayer, MapImageLayer, GraphicsLayer,
+                     Extent, CoordinateConversion, TileLayer, Graphic, ElevationLayer, IntegratedMeshLayer,
+                     watchUtils) {
+
+            var viewPoint = null;
+            // 鼠标移动上去，厚度层
+            let moveGraLayerFill = new GraphicsLayer({
+                id: "moveGraLayerFill",
+            })
+
+            // 鼠标移动上去，面层
+            let moveGraLayerLine = new GraphicsLayer({
+                id: "moveGraLayerLine",
+                elevationInfo: {
+                    mode: "relative-to-ground",
+                    offset: 35500,
+                    unit: "meters"
+                }
+            })
+
+            //安徽省厚度层
+            var ahsLayerFill = new GeoJSONLayer({
+                url: './json/geo_ah_sheng.json',
+                copyright: "USGS Earthquakes",
+                renderer: {
+                    type: "simple",
+                    symbol: {
+                        type: "polygon-3d",
+                        symbolLayers: [{
+                            type: "extrude",
+                            size: 25000,
+                            material: {color: [121, 126, 153, 1]}
+                        }]
+                    }
+                }
+            });
+            //安徽省面层
+            var ahsLayerLine = new GeoJSONLayer({
+                url: './json/geo_ah_shi.json',
+                labelingInfo: {
+                    labelExpressionInfo: {expression: "$feature.SHI_MC"},
+                    symbol: {
+                        type: "label-3d",
+                        symbolLayers: [{
+                            type: "text",
+                            material: {color: [255, 255, 255, 1]},
+                            size: 12
+                        }]
+                    }
+                },
+                renderer: {
+                    type: "simple",
+                    symbol: {
+                        type: "polygon-3d",
+                        symbolLayers: [{
+                            type: "fill",
+                            material: {color: [42, 129, 238, 1]},
+                            castShadows: true,
+                            outline: {
+                                color: [0, 249, 253, 1],
+                                size: "2px"
+                            },
+                            edges: {
+                                type: "solid",
+                                color: [50, 50, 50, 0.5]
+                            }
+                        }]
+                    }
+                },
+                elevationInfo: {
+                    mode: "relative-to-ground",
+                    offset: 25500,
+                    unit: "meters"
+                }
+            });
+
+            let basemapLayer = new TileLayer({
+                url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+                visible: false,
+            })
+
+            var map = new Map();
+            map.add(basemapLayer)
+            map.add(moveGraLayerFill);
+            map.add(moveGraLayerLine);
+            map.add(ahsLayerFill);
+            map.add(ahsLayerLine);
+
+            //市 图层厚度层
+            let moveGraLayerFillCity = new GraphicsLayer({
+                id: "moveGraLayerFillCity",
+            })
+
+            // 鼠标移动上去，面层
+            let moveGraLayerLineCity = new GraphicsLayer({
+                id: "moveGraLayerLineCity",
+                elevationInfo: {
+                    mode: "relative-to-ground",
+                    offset: 25500,
+                    unit: "meters"
+                }
+            })
+            map.addMany([moveGraLayerFillCity, moveGraLayerLineCity]);
+
+            var view = new SceneView({
+                container: "viewDiv",
+                map: map,
+                zoom: 7,
+                camera: {
+                    position: [
+                        119.02675882117109,
+                        26.012295741608202,
+                        732392.7597702183
+                    ],
+                    tilt: 39.52228633517453,
+                    fov: 55,
+                    heading: 345.18869243636766
+                },
+                environment: {
+                    background: {
+                        type: "color",
+                        color: [255, 252, 244, 1]
+                    },
+                    atmosphereEnabled: false,
+                    starsEnabled: true
+                }
+            });
+            map.ground.opacity = 0;
+            view.ui.remove(["zoom", "attribution"]);
+
+
+            var moveE = null;
+            var clickE = null;
+
+
+            view.when(function () {
+                viewPoint = view.viewpoint;
+                addHandles();
+            })
+            document.getElementById("goback").onclick = function () {
+                if(!ahsLayerFill.visible){
+                    moveGraLayerFillCity.removeAll();
+                    moveGraLayerLineCity.removeAll();
+                    ahsLayerFill.visible = true;
+                    ahsLayerLine.visible = true;
+                    view.goTo(
+                        viewPoint, {
+                            duration: 1500
+                        }
+                    );
+                    basemapLayer.visible = false;
+                    addHandles();
+                }
+            }
+
+            function addHandles() {
+                //鼠标移动事件
+                moveE = view.on('pointer-move', function (evt) {
+                    view.hitTest(evt, {include: ahsLayerLine}).then(function (response) {
+                        if (response.results.length > 0) {
+                            moveGraLayerFill.removeAll();
+                            moveGraLayerLine.removeAll();
+                            let gra = response.results[0].graphic.clone();
+                            gra.symbol = {
+                                type: "polygon-3d",
+                                symbolLayers: [{
+                                    type: "extrude",
+                                    size: 35000,
+                                    material: {color: [74, 67, 62, 1]}
+                                }]
+                            };
+                            moveGraLayerFill.add(gra);
+                            let gra1 = response.results[0].graphic.clone();
+                            gra1.symbol = {
+                                type: "polygon-3d",
+                                symbolLayers: [{
+                                    type: "fill",
+                                    material: {color: [228, 222, 38, 1]},
+                                    castShadows: true,
+                                    outline: {
+                                        color: [0, 249, 253, 1],
+                                        size: "2px"
+                                    },
+                                    edges: {
+                                        type: "solid",
+                                        color: [50, 50, 50, 0.5]
+                                    }
+                                }]
+                            };
+                            moveGraLayerLine.add(gra1);
+
+                            let point = response.results[0].graphic.clone().geometry.centroid;
+                            moveGraLayerLine.add(new Graphic({
+                                geometry: point,
+                                symbol: {
+                                    type: "text",
+                                    color: [255, 255, 255, 1],
+                                    text: response.results[0].graphic.attributes.SHI_MC,
+                                    font: {  // autocasts as new Font()
+                                        size: 12,
+                                        family: "Josefin Slab",
+                                        weight: "bold"
+                                    }
+                                }
+                            }));
+                        } else {
+                            moveGraLayerFill.removeAll();
+                            moveGraLayerLine.removeAll();
+                        }
+                    });
+                })
+                //鼠标点击事件
+                clickE = view.on('click', function (evt) {
+                    view.hitTest(evt, {include: ahsLayerLine}).then(function (response) {
+                        if (response.results.length > 0) {
+                            moveGraLayerFill.removeAll();
+                            moveGraLayerLine.removeAll();
+                            ahsLayerFill.visible = false
+                            ahsLayerLine.visible = false
+                            //去除鼠标移动事件
+                            moveE.remove();
+                            let gra = response.results[0].graphic.clone();
+                            gra.symbol = {
+                                type: "polygon-3d",
+                                symbolLayers: [{
+                                    type: "extrude",
+                                    size: 25000,
+                                    material: {color: [121, 126, 153, 1]}
+                                }]
+                            };
+                            moveGraLayerFillCity.add(gra)
+                            let gra1 = response.results[0].graphic.clone();
+                            gra1.symbol = {
+                                type: "polygon-3d",
+                                symbolLayers: [{
+                                    type: "fill",
+                                    material: {color: [42, 129, 238, 1]},
+                                    castShadows: true,
+                                    outline: {
+                                        color: [0, 249, 253, 1],
+                                        size: "2px"
+                                    },
+                                    edges: {
+                                        type: "solid",
+                                        color: [50, 50, 50, 0.5]
+                                    }
+                                }]
+                            };
+                            moveGraLayerLineCity.add(gra1);
+                            let point = response.results[0].graphic.clone().geometry.centroid;
+                            moveGraLayerLineCity.add(new Graphic({
+                                geometry: point,
+                                symbol: {
+                                    type: "text",
+                                    color: [255, 255, 255, 1],
+                                    text: response.results[0].graphic.attributes.SHI_MC,
+                                    font: {  // autocasts as new Font()
+                                        size: 12,
+                                        family: "Josefin Slab",
+                                        weight: "bold"
+                                    }
+                                }
+                            }));
+                            view.goTo({
+                                target: point,
+                                zoom: 9,
+                                tilt: 0,
+                                heading: 360
+                            }, {
+                                duration: 1500
+                            }).then(function () {
+                                clickE.remove();
+                                moveGraLayerFillCity.removeAll();
+                                moveGraLayerLineCity.removeAll();
+                                moveGraLayerFillCity.add(new Graphic({
+                                    geometry: point,
+                                    symbol: {
+                                        type: "text",
+                                        color: [255, 255, 255, 1],
+                                        text: response.results[0].graphic.attributes.SHI_MC,
+                                        font: {  // autocasts as new Font()
+                                            size: 12,
+                                            family: "Josefin Slab",
+                                            weight: "bold"
+                                        }
+                                    }
+                                }));
+                                let gra2 = response.results[0].graphic.clone();
+                                gra2.symbol = {
+                                    type: "simple-fill",
+                                    color: [42, 129, 238, 0],
+                                    style: "solid",
+                                    outline: {
+                                        color: [0, 249, 253, 1],
+                                        size: "2px"
+                                    },
+                                };
+                                moveGraLayerFillCity.add(gra2);
+                                basemapLayer.visible = true;
+                                // fadeVisibilityOn(basemapLayer);
+                            });
+
+                        } else {
+                            moveGraLayerFillCity.removeAll();
+                            moveGraLayerLineCity.removeAll();
+                        }
+                    });
+                })
+            }
+
+        })
+    </script>
+</head>
+<body>
+<div id="viewDiv">
+</div>
+<div id="tooltip">
+    <button id="goback">返回全图</button>
+</div>
+<div class="echart_content">
+    <iframe src="echart_pie.html" frameborder="0" id="echart_bar" scrolling="no"></iframe>
+    <iframe src="echart_bar.html" frameborder="0" id="echart_pie" scrolling="no"></iframe>
+</div>
+</body>
+</html>
+
